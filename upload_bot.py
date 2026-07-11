@@ -7,7 +7,7 @@ from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 import io
 
 # === ၁။ သတ်မှတ်ချက်များ (Configurations) ===
-DRIVE_FOLDER_ID = '1Z_yJ97R-D8e87N_YI7W_M9v7GZ9X_X7P'  # သင့် Google Drive ဖိုဒါ ID
+DRIVE_FOLDER_ID = '1mU6CFCAU3caRayvn1DjV32V7SlyThlo1'  # သင့် Google Drive ဖိုဒါ ID
 UPLOAD_TRACK_FILE = 'uploaded.txt'
 
 # 🌟 Scope ကို ReadOnly မှ ဖိုင်ပြင်ဆင်ခွင့်/ဖျက်ခွင့် (drive) ရရှိအောင် ပြောင်းလဲထားပါသည်
