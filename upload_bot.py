@@ -48,7 +48,7 @@ def main():
         uploaded_videos = get_uploaded_videos()
         
         # ၁။ Google Drive Folder ထဲရှိ ဗီဒီယိုများကို ရှာဖွေခြင်း (အမည်အလိုက် စီမည်)
-        query = f"'{DRIVE_FOLDER_ID}' in parents and mimeType startswith 'video/' and trashed = false"
+        query = f"'{DRIVE_FOLDER_ID}' in parents and mimeType contains 'video/' and trashed = false"
         results = drive_service.files().list(
             q=query, 
             fields="files(id, name)",
