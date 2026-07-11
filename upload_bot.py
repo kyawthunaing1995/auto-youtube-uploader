@@ -1,129 +1,137 @@
 import os
-import io
 import json
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
+import base64
+import google.oauth2.credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
+import io
 
-# configuration သတ်မှတ်ချက်များ
-DRIVE_FOLDER_ID = '1mU6CFCAU3caRayvn1DjV32V7SlyThlo1'
-UPLOADED_LOG_FILE = 'uploaded.txt'
+# === ၁။ သတ်မှတ်ချက်များ (Configurations) ===
+DRIVE_FOLDER_ID = '1Z_yJ97R-D8e87N_YI7W_M9v7GZ9X_X7P'  # သင့် Google Drive ဖိုဒါ ID
+UPLOAD_TRACK_FILE = 'uploaded.txt'
 
-def get_authenticated_services():
-    """GitHub Secrets ထဲက ပြန်လည်ရယူထားတဲ့ Environment Variable ကနေ Credentials ကို ဖတ်ပြီး
-    Google Drive နဲ့ YouTube API Client များကို ဆောက်ပေးသည်"""
-    creds_json_str = os.environ.get('GOOGLE_CREDENTIALS_JSON')
-    if not creds_json_str:
-        raise ValueError("GOOGLE_CREDENTIALS_JSON environment variable မတွေ့ရှိပါ။ GitHub Secrets တွင် သေချာထည့်သွင်းပေးပါ။")
-        
-    creds_info = json.loads(creds_json_str)
-    creds = Credentials.from_authorized_user_info(creds_info)
-    
-    # Token သက်တမ်းကုန်နေပါက Refresh လုပ်မည်
-    if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        
-    drive_service = build('drive', 'v3', credentials=creds)
-    youtube_service = build('youtube', 'v3', credentials=creds)
-    
-    return drive_service, youtube_service
+# 🌟 Scope ကို ReadOnly မှ ဖိုင်ပြင်ဆင်ခွင့်/ဖျက်ခွင့် (drive) ရရှိအောင် ပြောင်းလဲထားပါသည်
+SCOPES = [
+    'https://www.googleapis.com/auth/drive',
+    'https://www.googleapis.com/auth/youtube.upload'
+]
 
+# === ၂။ အကူအညီပေးမည့် လုပ်ဆောင်ချက်များ (Helper Functions) ===
 def get_uploaded_videos():
-    """တင်ပြီးသား ဗီဒီယိုစာရင်းကို uploaded.txt ကနေ ဖတ်ယူသည်"""
-    if not os.path.exists(UPLOADED_LOG_FILE):
+    """တင်ပြီးသား ဗီဒီယိုစာရင်းကို uploaded.txt မှ ဖတ်ယူခြင်း"""
+    if not os.path.exists(UPLOAD_TRACK_FILE):
         return set()
-    with open(UPLOADED_LOG_FILE, 'r', encoding='utf-8') as f:
+    with open(UPLOAD_TRACK_FILE, 'r', encoding='utf-8') as f:
         return set(line.strip() for line in f if line.strip())
 
 def mark_as_uploaded(video_name):
-    """ဗီဒီယိုအသစ်ကို တင်ပြီးကြောင်း uploaded.txt ထဲတွင် မှတ်သားသည်"""
-    with open(UPLOADED_LOG_FILE, 'a', encoding='utf-8') as f:
-        f.write(video_name + '\n')
+    """တင်ပြီးသွားသော ဗီဒီယိုကို uploaded.txt ထဲသို့ ထည့်သွင်းခြင်း"""
+    with open(UPLOAD_TRACK_FILE, 'a', encoding='utf-8') as f:
+        f.write(f"{video_name}\n")
 
+# === ၃။ အဓိက လုပ်ဆောင်ချက် (Main Logic) ===
 def main():
-    try:
-        print("Bot စတင်အလုပ်လုပ်နေပြီ...")
-        drive_service, youtube_service = get_authenticated_services()
-        uploaded_videos = get_uploaded_videos()
+    print("Bot စတင်အလုပ်လုပ်နေပြီ...")
+    
+    # GitHub Secrets မှတစ်ဆင့် Google Credentials JSON ကို ဖတ်ယူခြင်း
+    creds_json_str = os.environ.get('GOOGLE_CREDENTIALS_JSON')
+    if not creds_json_str:
+        print("အမှားအယွင်း: GOOGLE_CREDENTIALS_JSON လျှို့ဝှက်ချက် မရှိသေးပါ။")
+        return
         
-        # ၁။ Google Drive Folder ထဲရှိ ဗီဒီယိုများကို ရှာဖွေခြင်း (အမည်အလိုက် စီမည်)
-        query = f"'{DRIVE_FOLDER_ID}' in parents and mimeType contains 'video/' and trashed = false"
+    creds_info = json.loads(creds_json_str)
+    creds = google.oauth2.credentials.Credentials.from_authorized_user_info(creds_info, SCOPES)
+    
+    # Google API Services များ တည်ဆောက်ခြင်း
+    drive_service = build('drive', 'v3', credentials=creds)
+    youtube_service = build('youtube', 'v3', credentials=creds)
+    
+    # ယခင် တင်ဖူးပြီးသား ဗီဒီယိုများ စာရင်းကို ယူခြင်း
+    uploaded_list = get_uploaded_videos()
+    
+    # Google Drive ဖိုဒါထဲမှ ဗီဒီယိုဖိုင်များကို ရှာဖွေခြင်း
+    query = f"'{DRIVE_FOLDER_ID}' in parents and mimeType contains 'video/' and trashed = false"
+    try:
         results = drive_service.files().list(
-            q=query, 
+            q=query,
             fields="files(id, name)",
             orderBy="name"
         ).execute()
-        
         files = results.get('files', [])
+    except Exception as e:
+        print(f"အမှားအယွင်း ဖြစ်ပွားခဲ့သည်: {e}")
+        return
+
+    if not files:
+        print("သတ်မှတ်ထားသော Google Drive ဖိုဒါထဲတွင် ဗီဒီယိုမတွေ့ရှိပါ။")
+        return
         
-        if not files:
-            print("သတ်မှတ်ထားသော Google Drive Folder ထဲတွင် ဗီဒီယိုမတွေ့ရှိပါ။")
-            return
+    # မတင်ရသေးသော ဗီဒီယိုအသစ်တစ်ပုဒ်ကို ရွေးချယ်ခြင်း
+    target_file = None
+    for f in files:
+        if f['name'] not in uploaded_list:
+            target_file = f
+            break
             
-        # ၂။ တင်မရသေးသော ပထမဆုံးဗီဒီယိုကို ရွေးချယ်ခြင်း
-        target_video = None
-        for file in files:
-            if file['name'] not in uploaded_videos:
-                target_video = file
-                break
-                
-        if not target_video:
-            print("ဗီဒီယိုအားလုံးကို YouTube ပေါ် တင်ပြီးသွားပါပြီ။ တင်စရာအသစ် မရှိတော့ပါ။")
-            return
-            
-        video_id = target_video['id']
-        video_name = target_video['name']
-        print(f"ယနေ့တင်ရန် ရွေးချယ်လိုက်သော ဗီဒီယို - {video_name}")
+    if not target_file:
+        print("ဖိုဒါထဲရှိ ဗီဒီယိုအားလုံးကို တင်ပြီးသွားပါပြီ။ ဗီဒီယိုအသစ် မရှိပါ။")
+        return
         
-        # ၃။ ရွေးချယ်လိုက်သော ဗီဒီယိုကို GitHub Actions Runner ဆီသို့ ဒေါင်းလုဒ်ဆွဲခြင်း
-        request = drive_service.files().get_media(fileId=video_id)
-        local_filename = video_name
-        
-        print("Google Drive မှ ဗီဒီယို ဒေါင်းလုဒ်ဆွဲနေသည်...")
-        with open(local_filename, 'wb') as f:
-            downloader = MediaIoBaseDownload(f, request, chunksize=1024*1024*10) # 10MB chunk
-            done = False
-            while not done:
-                status, done = downloader.next_chunk()
-                print(f"ဒေါင်းလုဒ်ဆွဲမှုနှုန်း: {int(status.progress() * 100)}%")
-                
-        print("ဒေါင်းလုဒ်ဆွဲခြင်း အောင်မြင်ပါသည်။")
-        
-        # ၄။ YouTube သို့ တင်ခြင်း
-        # ဗီဒီယိုခေါင်းစဉ်အဖြစ် ဖိုင်နာမည်ထဲက .mp4 စတာတွေကို ဖယ်ထုတ်ပေးမည်
-        title = os.path.splitext(video_name)[0]
-        
-        body = {
-            'snippet': {
-                'title': title,
-                'description': f'{title} - Automatically uploaded via GitHub Actions.',
-                'tags': ['automation', 'python', 'drive_to_youtube'],
-                'categoryId': '22' # 22 သည် People & Blogs အတွက်ဖြစ်သည်
-            },
-            'status': {
-                'privacyStatus': 'public' # အစပိုင်းတွင် Private အဖြစ်ပဲ တင်ထားမည် (Public ပြောင်းလိုက ပြောင်းနိုင်သည်)
-            }
+    video_id = target_file['id']
+    video_name = target_file['name']
+    print(f"ယနေ့တင်ရန် ရွေးချယ်လိုက်သော ဗီဒီယို - {video_name}")
+    
+    # ဗီဒီယိုအား စက်ထဲသို့ ဒေါင်းလုဒ်ဆွဲခြင်း
+    print("Google Drive မှ ဗီဒီယို ဒေါင်းလုဒ်ဆွဲနေသည်...")
+    request = drive_service.files().get_media(fileId=video_id)
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+    while done is False:
+        status, done = downloader.next_chunk()
+        print(f"ဒေါင်းလုဒ်ဆွဲနှုန်း: {int(status.progress() * 100)}%")
+    print("ဒေါင်းလုဒ်ဆွဲခြင်း အောင်မြင်ပါသည်။")
+    
+    # ဗီဒီယိုဖိုင်ကို ယူကျုပေါ်တင်ရန် ပြင်ဆင်ခြင်း
+    fh.seek(0)
+    # ဖိုင်အမည်မှ လိုင်းအောက်ကုတ် (_) များကို ဖျက်ပြီး ယူကျု Title အဖြစ် သုံးရန် ပြင်ခြင်း
+    video_title = os.path.splitext(video_name)[0].replace('_', ' ')
+    
+    body = {
+        'snippet': {
+            'title': video_title[:100],  # YouTube Title မှာ စာလုံး ၁၀၀ အထိပဲ ခွင့်ပြုလို့ပါ
+            'description': f"{video_title} - အလိုအလျောက် စနစ်ဖြင့် တင်ပေးထားသော ဗီဒီယို ဖြစ်ပါသည်။",
+            'tags': ['auto-upload', 'video'],
+            'categoryId': '22'  # People & Blogs ကဏ္ဍ
+        },
+        'status': {
+            'privacyStatus': 'public'  # 🌟 Public အဖြစ် လူတိုင်းကြည့်ရှုနိုင်အောင် တင်ပေးမည်
         }
+    }
+    
+    media = MediaFileUpload(
+        video_name,  # နာမည်အတိုင်း သတ်မှတ်သည်
+        mimetype='video/*',
+        resumable=True
+    )
+    # BytesIO မှ လက်ရှိဖိုင်လမ်းကြောင်းသို့ ယာယီရေးသားခြင်း
+    with open(video_name, 'wb') as local_file:
+        local_file.write(fh.read())
         
-        media = MediaFileUpload(
-            local_filename, 
-            mimetype='application/octet-stream', 
-            resumable=True
-        )
-        
-        print("YouTube ပေါ်သို့ ဗီဒီယို စတင် Upload တင်နေသည်...")
-        request = youtube_service.videos().insert(
-            part=','.join(body.keys()),
+    print("YouTube ပေါ်သို့ ဗီဒီယို စတင် Upload တင်နေသည်...")
+    try:
+        media = MediaFileUpload(video_name, mimetype='video/*', resumable=True)
+        upload_request = youtube_service.videos().insert(
+            part='snippet,status',
             body=body,
             media_body=media
         )
         
         response = None
         while response is None:
-            status, response = request.next_chunk()
+            status, response = upload_request.next_chunk()
             if status:
-                print(f"YouTube Upload တင်မှုနှုန်း: {int(status.progress() * 100)}%")
+                print(f"YouTube သို့ တင်နေနှုန်း: {int(status.progress() * 100)}%")
                 
         print(f"YouTube ပေါ်သို့ ဗီဒီယို တင်ခြင်း အောင်မြင်ပါသည်။ Video ID: {response['id']}")
         
@@ -131,12 +139,23 @@ def main():
         mark_as_uploaded(video_name)
         print(f"uploaded.txt ထဲတွင် {video_name} ကို မှတ်သားပြီးစီးပါပြီ။")
         
-        # လိုအပ်ပါက ဒေါင်းလုဒ်ဆွဲထားသော ယာယီဗီဒီယိုဖိုင်ကို ပြန်ဖျက်မည်
-        if os.path.exists(local_filename):
-            os.remove(local_filename)
+        # 🌟 ၆။ အလိုအလျောက် စနစ်သစ် - Google Drive မှ ဖိုင်ကို အမှိုက်ပုံး (Trash) သို့ ရွှေ့ခြင်း
+        try:
+            drive_service.files().update(
+                fileId=video_id,
+                body={'trashed': True}
+            ).execute()
+            print(f"ဂျာနယ်/ဗီဒီယို ပြီးဆုံးသဖြင့် Google Drive ရှိ '{video_name}' ကို အမှိုက်ပုံးသို့ ရွှေ့ပြီးပါပြီ။")
+        except Exception as trash_err:
+            print(f"သတိပေးချက်: Drive ဖိုင်ကို အမှိုက်ပုံးသို့ မရွှေ့နိုင်ခဲ့ပါ: {trash_err}")
             
-    except Exception as e:
-        print(f"အမှားအယွင်း ဖြစ်ပွားခဲ့သည်: {e}")
+    except Exception as upload_err:
+        print(f"YouTube သို့ တင်ရာတွင် အမှားပြနေပါသည်: {upload_err}")
+        
+    finally:
+        # ယာယီဒေါင်းလုဒ်ဆွဲထားသော ဗီဒီယိုဖိုင်အား စက်ထဲမှ ပြန်ဖျက်ခြင်း
+        if os.path.exists(video_name):
+            os.remove(video_name)
 
 if __name__ == '__main__':
     main()
