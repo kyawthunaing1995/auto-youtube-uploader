@@ -102,7 +102,7 @@ def main():
                 'categoryId': '22' # 22 သည် People & Blogs အတွက်ဖြစ်သည်
             },
             'status': {
-                'privacyStatus': 'private' # အစပိုင်းတွင် Private အဖြစ်ပဲ တင်ထားမည် (Public ပြောင်းလိုက ပြောင်းနိုင်သည်)
+                'privacyStatus': 'public' # အစပိုင်းတွင် Private အဖြစ်ပဲ တင်ထားမည် (Public ပြောင်းလိုက ပြောင်းနိုင်သည်)
             }
         }
         
