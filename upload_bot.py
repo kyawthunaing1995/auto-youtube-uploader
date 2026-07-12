@@ -88,7 +88,7 @@ def main():
     body = {
         'snippet': {
             'title': video_title[:100],  
-            'description': f"{video_title} - အလိုအလျောက် စနစ်ဖြင့် တင်ပေးထားသော ဗီဒီယို ဖြစ်ပါသည်။",
+            'description': f"{video_title} - ကောင်းမူတခုနေ့စဉ်ပြုကြပါ ဓမ္မမိတ်ဆွေတို့",
             'tags': ['auto-upload', 'video'],
             'categoryId': '22'  
         },
